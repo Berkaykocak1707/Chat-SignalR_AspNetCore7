@@ -1,0 +1,289 @@
+﻿@model ChatViewModel
+@{
+    Layout = "";
+    bool status = false;
+}
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+
+    <title>Chat - Berkay Koçak</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link
+      href="https://cdn.jsdelivr.net/npm/bootstrap@4.3.1/dist/css/bootstrap.min.css"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="~/css/chat.css" />
+  </head>
+<body data-current-user-id="@Model.currentUser.Id" data-current-user-photo-url="@Model.currentUser.UserPhotoUrl" data-current-user-name="@Model.currentUser.UserName">
+    <link
+      href="https://maxcdn.bootstrapcdn.com/font-awesome/4.3.0/css/font-awesome.min.css"
+      rel="stylesheet"
+    />
+    <div class="container">
+        <div class="page-title">
+            <h5 class="title">Chat App | @User.Identity.Name | <a asp-action="Index" asp-controller="Home">Account Control Panel</a></h5>
+        </div>
+
+        <div class="content-wrapper">
+            <div class="row gutters">
+                <div class="col-xl-4 col-lg-4 col-md-4 col-sm-3 col-3">
+                    <div class="users-container">
+                        <div class="chat-search-box">
+                            <form itemid="searchUser">
+                                <div class="input-group mb-3">
+                                    <input type="text" class="form-control" placeholder="Search" id="SearchUser" aria-label="Recipient's username" aria-describedby="button-addon2" style="max-width: 250px;">
+                                    <button class="btn btn-info" type="button" id="searchButton">
+                                        <i class="fa fa-search"></i>
+                                    </button>
+                                </div>
+                            </form>
+                        </div>
+                        <ul class="users">
+                            @foreach (var item in Model.customUsers)
+                            {
+                                <li class="person" data-receiver-firstname="@item.FirstName" data-receiver-id="@item.Id" data-receiver-photo="@(item.UserPhotoUrl != null && !string.IsNullOrWhiteSpace(item.UserPhotoUrl) ? item.UserPhotoUrl : "/images/no_photo.jpg")">
+                                    <div class="user">
+                                        <img src="@(item.UserPhotoUrl != null && !string.IsNullOrWhiteSpace(item.UserPhotoUrl) ? item.UserPhotoUrl : "/images/no_photo.jpg")"
+                                             alt="User Image" />
+                                        <span class="status @((item.IsOnline ?? false) ? "online" : "busy")" data-status-id="@item.Id"></span>
+                                    </div>
+                                    <p class="name-time">
+                                        <span class="name">@item.FirstName @item.LastName</span>
+                                    </p>
+                                </li>
+                            }
+                        </ul>
+                    </div>
+                </div>
+                <div class="col-xl-8 col-lg-8 col-md-8 col-sm-9 col-9">
+                    <div id="selectMessagePrompt">Please select a messaging</div>
+                    <div class="selected-user" style="display:none;">
+                        <span>To: <span class="name" id="selectedUserName"></span></span>
+                    </div>
+                    <div class="chat-container" style="display:none;">
+                        <ul class="chat-box chatContainerScroll" id="mesajlar" style="max-height: 500px; overflow-y: auto;">
+                            <!-- Mesajlar burada JS tarafından yüklenecek -->
+                        </ul>
+                        <div class="box-footer">
+                            <form id="frmMesaj">
+                                <div class="input-group">
+                                    <input type="text" name="message" id="txtMesaj" placeholder="Type Message ..." class="form-control">
+                                    <button class="btn btn-warning">Send</button>
+                                </div>
+                            </form>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://code.jquery.com/jquery-1.10.2.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@4.3.1/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="~/js/signalr/dist/browser/signalr.min.js"></script>
+    <script>
+        var receiverId
+        var receiverPhoto 
+        var firstName
+        var currentUserID = document.body.getAttribute('data-current-user-id');
+        var currentUserPhotoUrl = document.body.getAttribute('data-current-user-photo-url');
+        var mesajContainer = document.getElementById('mesajlar');
+        $(document).on('click', '.person', function () {
+            receiverId = $(this).data('receiver-id');
+            receiverPhoto = $(this).data('receiver-photo');
+            firstName = $(this).data('receiver-firstname');
+            $('#selectMessagePrompt').hide();
+            $('.chat-container, .selected-user').show();
+            $('#mesajlar').empty(); // Mevcut mesajları temizle
+            $('#selectedUserName').text($(this).find('.name').text()); // Seçilen kullanıcının adını güncelle
+            $.ajax({
+                url: `/api/messages/find/${receiverId}`, // URL'i güncelledim
+                type: 'GET',
+                success: function (data) {
+                    data.forEach(function (mesaj) {
+                        var isReadClass = mesaj.isRead ? "fa fa-check-circle" : "";
+                        var rawDate = mesaj.dateSent;
+                        var formattedDate = new Intl.DateTimeFormat('en-US', {
+                            year: 'numeric',
+                            month: '2-digit',
+                            day: '2-digit',
+                            hour: '2-digit',
+                            minute: '2-digit',
+                            hour12: false // 24 saatlik dilim için
+                        }).format(new Date());
+                        var mesajHtml = mesaj.receiverID === "@Model.currentUser.Id" ?
+                            `<li class="chat-left">
+                                <div class="chat-avatar">
+                                    <img src="${receiverPhoto}" alt="User Image">
+                                    <div class="chat-name">${firstName}</div>
+                                </div>
+                                <div class="chat-text">${mesaj.content}</div>
+                                <div class="chat-hour">${formattedDate} <span class="read-icon"></span></div>
+                            </li>` :
+                            `<li class="chat-right" data-message-id="${mesaj.messageID}">
+                                <div class="chat-hour">${formattedDate} <span class="read-icon ${isReadClass}"></span></div>
+                                <div class="chat-text">${mesaj.content}</div>
+                                <div class="chat-avatar">
+                                    <img src="@Model.currentUser.UserPhotoUrl" alt="User Image">
+                                    <div class="chat-name">@Model.currentUser.FirstName</div>
+                                </div>
+                            </li>`;
+                        $('#mesajlar').append(mesajHtml);
+                        mesajContainer.scrollTop = mesajContainer.scrollHeight;
+                    });
+                },
+                error: function (err) {
+                    console.error('Mesaj yüklenirken hata oluştu', err);
+                }
+
+            });
+        });
+
+        var name = document.body.getAttribute('data-current-user-name');
+        const connection = new signalR.HubConnectionBuilder()
+            .withUrl("/chatHub")
+            .build();
+        
+        frmMesaj.onsubmit = function (event) {
+            event.preventDefault();
+            
+            connection.invoke("SendMessage", name, receiverId, txtMesaj.value)
+                .catch(function (err) {
+                    console.log(err);
+                });
+            txtMesaj.value = "";
+        }
+        
+        connection.on("ReceiveMessage", function (senderId, message, userName, messageId, isActiveChat) {
+            var dateSent = new Intl.DateTimeFormat('en-US', {
+                year: 'numeric',
+                month: '2-digit',
+                day: '2-digit',
+                hour: '2-digit',
+                minute: '2-digit',
+                hour12: false // 24 saatlik dilim için
+            }).format(new Date());
+
+            var isReadClass = isActiveChat ? "fa fa-check-circle" : ""; // Alıcı çevrimiçiyse ikon göster
+            if (senderId === currentUserID) {
+                mesajContainer.insertAdjacentHTML('beforeend', `
+                <li class="chat-right" data-message-id="${messageId}">
+                    <div class="chat-hour">${dateSent} <span class="read-icon ${isReadClass}"></span></div>
+                    <div class="chat-text">${message}</div>
+                    <div class="chat-avatar">
+                        <img src="${currentUserPhotoUrl}" alt="User Image">
+                        <div class="chat-name">${name}</div>
+                    </div>
+                </li>
+                `);
+            }
+            else if (receiverId === senderId) {
+                mesajContainer.insertAdjacentHTML('beforeend', `
+                <li class="chat-left" data-message-id="${messageId}">
+                    <div class="chat-avatar">
+                        <img src="${receiverPhoto}" alt="User Image">
+                        <div class="chat-name">${firstName}</div>
+                    </div>
+                    <div class="chat-text">${message}</div>
+                    <div class="chat-hour">${dateSent} <span class="read-icon"></span></div>
+                </li>
+                `);
+            }
+            mesajContainer.scrollTop = mesajContainer.scrollHeight;
+        });
+
+        $(document).on('click', '.person', function () {
+            connection.invoke("MarkMessagesAsRead", receiverId, currentUserID)
+            console.log("Nuraya Geldin");
+        });
+
+        connection.on("UpdateMessageStatus", function (messageId, isRead) {
+            if (isRead) {
+                console.log("Test başarılı");
+                // Tüm ilgili mesaj elementlerini seçmek için doğru seçiciyi kullanın
+                var messageElements = document.querySelectorAll(`[data-message-id="${messageId}"]`);
+                messageElements.forEach(function (element) {
+                    // Okunma ikonunu kontrol edin veya ekleyin
+                    var readIcon = element.querySelector(".read-icon"); // ".read-icon" sınıfını kullandığınızdan emin olun
+                    if (!readIcon) {
+                        // Eğer okunma ikonu yoksa, ekleyin
+                        var readIconHtml = `<span class="read-icon fa fa-check-circle"></span>`; // Bu HTML'i uygun yere ekleyin
+                        element.querySelector('.chat-hour').insertAdjacentHTML('beforeend', readIconHtml);
+                    } else {
+                        // İkon zaten varsa, gerekli sınıfları ekleyin/güncelleyin
+                        readIcon.classList.add("fa");
+                        readIcon.classList.add("fa-check-circle");
+                    }
+                });
+            }
+        });
+
+        connection.on("UserStatusChanged", function (userId, isOnline) {
+            // Kullanıcı durumunu gösteren span'ları bul
+            var userStatusElements = document.querySelectorAll(`[data-status-id="${userId}"]`);
+
+            userStatusElements.forEach(function (span) {
+                if (isOnline) {
+                    span.classList.remove('busy');
+                    span.classList.add('online');
+                    span.title = "Offline";
+                } else {
+                    span.classList.remove('online');
+                    span.classList.add('busy');
+                    span.title = "Online";
+                }
+            });
+        });
+
+
+        connection.start().then(function () {
+            console.log("SignalR bağlantısı başarılı.");
+        }).catch(function (err) {
+            console.error('SignalR bağlantı hatası:', err);
+        });
+
+        $(document).ready(function () {
+            // Arama butonuna tıklama olayı
+            $('#searchButton').click(function () {
+                var name = $('#SearchUser').val(); // İnputtan alınan değer
+                if (!name) {
+                    name = 'All';
+                }
+                var current = "@Model.currentUser.UserName"
+                $.ajax({
+                    url: '/api/messages/findusers/' + name + "/" + current, // API yolu
+                    type: 'GET',
+                    success: function (data) {
+                        // Mevcut kullanıcı listesini temizle
+                        $('.users').empty();
+
+                        // Gelen veriyle kullanıcı listesini doldur
+                        $.each(data, function (i, user) {
+                            var userPhotoUrl = user.userPhotoUrl != null && !user.userPhotoUrl.trim() == '' ? user.userPhotoUrl : '/images/no_photo.jpg';
+                            var lastName = user.lastName ? user.lastName : '';
+                            // Kullanıcının online/offline durumuna göre sınıfı belirle
+                            var userStatusClass = user.isOnline ? 'online' : 'busy';
+                            var userElement = '<li class="person" data-receiver-firstname="' + user.firstName + '" data-receiver-id="' + user.id + '" data-receiver-photo="' + userPhotoUrl + '">' +
+                                '<div class="user">' +
+                                '<img src="' + userPhotoUrl + '" alt="User Image" />' +
+                                // Duruma göre sınıf ekleyin
+                                '<span data-status-id="'+user.id+'" class="status ' + userStatusClass + '"></span>' +
+                                '</div>' +
+                                '<p class="name-time">' +
+                                '<span class="name">' + user.firstName + ' ' + lastName + '</span>' +
+                                '</p>' +
+                                '</li>';
+                            $('.users').append(userElement);
+                        });
+                    },
+                    error: function () {
+                        alert('Kullanıcılar yüklenirken bir hata oluştu.');
+                    }
+                });
+            });
+        });
+    </script>
+  </body>
+</html>
